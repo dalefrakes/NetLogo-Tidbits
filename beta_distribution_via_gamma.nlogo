@@ -2,9 +2,6 @@ turtles-own [
   data
 ]
 
-
-
-
 to setup
 
   clear-all
@@ -13,14 +10,11 @@ to setup
   create-turtles population
   [
     set data random-beta alpha beta
-    ;;show data
   ]
 
   tick
 
 end
-
-
 
 to-report random-beta [ #shape1 #shape2 ]
 
@@ -81,7 +75,7 @@ alpha
 alpha
 0.5
 100
-50.5
+1.0
 0.5
 1
 NIL
@@ -96,7 +90,7 @@ beta
 beta
 0.5
 100
-50.5
+4.0
 0.5
 1
 NIL
@@ -140,15 +134,20 @@ NIL
 @#$#@#$#@
 ## WHAT IS IT?
 
-(a general understanding of what the model is trying to show or explain)
+This code sample demonstrates how to draw random numbers from the Beta distribution in NetLogo.  
+
 
 ## HOW IT WORKS
 
-(what rules the agents use to create the overall behavior of the model)
+Netlogo doesn't offer a native way to draw from the Beta distribution however it does have a Gamma distribution.  The Beta with parameters shape1 and shape2 can be generated using two draws from the Gamma distribution with (shape1, 1) and (shape2, 1) respectively.
+
+    let Xa random-gamma #shape1 1
+    let Xb random-gamma #shape2 1
+    report Xa / (Xa + Xb)
 
 ## HOW TO USE IT
 
-(how to use the model, including a description of each of the items in the Interface tab)
+Select a population size and click `setup`.  Each turtle will have a single data value drawn randomly from `random-beta` according to the given shape paremters.  The values for the whole population are shown in the histogram.
 
 ## THINGS TO NOTICE
 
