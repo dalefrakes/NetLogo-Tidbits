@@ -1,53 +1,263 @@
-extensions [ array ]
+extensions [array]
+
+;;;;;;;;;;;;;;;
+;; Variables ;;
+;;;;;;;;;;;;;;;
+
+globals [
+
+  TP-n-control       ;; count of True-Positives for the control group
+  FP-n-control       ;; count of False-Positives for the control group
+  TP-n-treatment     ;; count of True-Positives for the treatment group
+  FP-n-treatment     ;; count of False-Positives for the treatment group
+
+  TP-control         ;; array to keep track TP values by threshold bin for control group
+  FP-control         ;; array to keep track FP values by threshold bin for control group
+  TP-treatment       ;; array to keep track TP values by threshold bin for treatment group
+  FP-treatment       ;; array to keep track TP values by threshold bin for treatment group
+
+  AUC-control        ;; hold the most recent Area Under the Curve for control group
+  AUC-treatment      ;; hold the most recent Area Under the Curve for treatment group
+
+]
+
+breed [signals signal]
+breed [detectors detector]
+
+signals-own [
+  true-case?
+]
+
+detectors-own
+[
+  treated?
+]
+
+;;;;;;;;;;;;;;;
+;; SETUP     ;;
+;;;;;;;;;;;;;;;
+
+to setup
+  clear-all
+  reset-ticks
+
+  ;;set-default-shape turtles "person"
+  create-detectors num-detectors
+  [
+    set shape "person"
+    ;;set size 1.5
+    set color white
+    setxy random-pxcor random-pycor
+
+    set treated? false
+
+  ]
+
+  ;; determine which of the detectors will be treated
+  let num-treated num-detectors * pcnt-treated
+  ask n-of num-treated detectors [
+    set treated? true
+    set color blue
+  ]
 
 
+  create-signals num-signals
+  [
+    set shape "dot"
+    setxy random-pxcor random-pycor
+    set color white
 
-to plotByOrder
+    set true-case? false
+  ]
+
+  ;; determine which of the signals will be true-cases
+  let num-true-cases num-signals * pcnt-true-cases
+  ask n-of num-true-cases signals [
+    set true-case? true
+    set color red
+  ]
+
+  initialize-ROC-data
+
+end
+
+
+to initialize-ROC-data
+  set TP-n-control 0
+  set FP-n-control 0
+
+  set TP-control array:from-list [ 0	0	0	0	0	0	0	0	0	0 0 ]
+  set FP-control array:from-list [ 0	0	0	0	0	0	0	0	0	0 0 ]
+
+  set TP-n-treatment 0
+  set FP-n-treatment 0
+
+  set TP-treatment array:from-list [ 0	0	0	0	0	0	0	0	0 0	0 ]
+  set FP-treatment array:from-list [ 0	0	0	0	0	0	0	0	0	0 0 ]
+end
+
+
+;;;;;;;;;;;;;;;
+;; GO        ;;
+;;;;;;;;;;;;;;;
+
+to go
+
+  ask detectors [
+    if (any? signals-here)
+    [
+      let sig one-of signals-here    ;; if there's more than one signal, use just one of them
+
+      let sig-true-case? [true-case?] of sig
+
+
+      ;; calculate probability of detecting the signal as a true-case
+
+      let prob-true-case random-float 1
+
+      ifelse treated?
+      [ set prob-true-case p-truecase sig-true-case? treatment-effect ]
+      [ set prob-true-case p-truecase sig-true-case? control-effect ]
+
+      update-ROC-data treated? sig-true-case? prob-true-case
+
+      update-ROC-plots
+    ]
+
+    wander-about
+
+  ]
+  tick
+
+end
+
+to-report p-truecase [#sig-truecase #effectiveness ]
+
+  ;; set a base chance of detecting if it's a true case or not
+  let prob-truecase 1 - random-float 2
+
+  let case-sign ifelse-value (#sig-truecase = true) [1] [-1]
+
+  report  1 - ( 1 / (1 + exp(  prob-truecase + case-sign * #effectiveness  )))
+
+end
+
+to wander-about  ;; detectors procedure
+  rt random 40
+  lt random 40
+  if not can-move? 1 [ rt 180 ]
+  fd 1
+end
+
+
+to update-ROC-data [ #treated? #sig-true-case? #p-true-case ]
+
+  ;; set an index for accessing the arrays (in bins of 1/10 of 0-1 scale of thresholds)
+  let idx floor ( 10 * #p-true-case )
+
+  ifelse #treated? = true [
+    ifelse #sig-true-case? = true [
+      ;; postive
+      set TP-n-treatment TP-n-treatment + 1
+      array:set TP-treatment idx array:item TP-treatment idx + 1
+    ]
+    [ ;; negative
+      set FP-n-treatment FP-n-treatment + 1
+      array:set FP-treatment idx array:item FP-treatment idx + 1
+    ]
+  ]
+  [
+    ifelse #sig-true-case? = true [
+      ;; postive
+      set TP-n-control TP-n-control + 1
+      array:set TP-control idx array:item TP-control idx + 1
+    ]
+    [ ;; negative
+      set FP-n-control FP-n-control + 1
+      array:set FP-control idx array:item FP-control idx + 1
+    ]
+  ]
+end
+
+to update-ROC-plots
+
+  update-single-ROC-plot "Control ROC" TP-n-control FP-n-control TP-control FP-control
+  update-single-ROC-plot "Treated ROC" TP-n-treatment FP-n-treatment TP-treatment FP-treatment
+
+end
+
+to update-single-ROC-plot [ #plot-name #TP-n #FP-n #TP #FP ]
+
+  set-current-plot #plot-name
   clear-plot
 
-  ;; some example data
-  let TP-n 1733
-  let FP-n 1722
+  if (#TP-n > 0) and (#FP-n > 0 ) [
+    let tpsum #TP-n   ;; running sum that will be decremented
+    let npsum #FP-n   ;; running sum that will be decremented
 
-  let tp array:from-list [ 430	266	259	211	186	112	57	33	13	166 0]
-  let fp array:from-list [  1176	243	67	15	3	1	1	1	0	215 0]
+    let tplist [ ]
+    let fplist [ ]
 
-  ;; example of how to update an array item based on a probability value
-  let tmp 1
-  let index floor ( 10 * tmp )
-  show tp
-  array:set tp index array:item tp index + 1
-  show tp
+    set tplist lput  1 tplist
+    set fplist lput  1 fplist
 
-  let tpsum TP-n
-  let npsum FP-n
+    foreach n-values 11 [ i -> i ] [ i ->
+      set tpsum tpsum - array:item #TP i
+      set tplist lput  ( tpsum / #TP-n ) tplist
 
-  let tplist [ ]
-  let fplist [ ]
+      set npsum npsum - array:item #FP i
+      set fplist lput  ( npsum / #FP-n ) fplist
+    ]
 
-  set tplist lput  1 tplist
-  set fplist lput  1 fplist
+    let neutral [ 0		1 ]
 
-  foreach n-values 10 [ i -> i ] [ i ->
-    set tpsum tpsum - array:item tp i
-    set tplist lput  ( tpsum / TP-n ) tplist
+    set-current-plot-pen "ROC"
+    (foreach tplist fplist  [[y x] -> plotxy x y])
 
-    set npsum npsum - array:item fp i
-    set fplist lput  ( npsum / FP-n ) fplist
+    set-current-plot-pen "neutral"
+    (foreach neutral neutral [[y x] -> plotxy x y])
+
+    if #plot-name = "Control ROC" [ set AUC-control ROC-AreaUnderCurve tplist fplist ]
+    if #plot-name = "Treated ROC" [ set AUC-treatment ROC-AreaUnderCurve tplist fplist ]
+
   ]
 
 
 
-  let neutral [ 0		1 ]
-
-  set-current-plot-pen "ROC"
-  (foreach tplist fplist  [[y x] -> plotxy x y])
-
-  set-current-plot-pen "neutral"
-  (foreach neutral neutral [[y x] -> plotxy x y])
-
 end
 
+to-report ROC-AreaUnderCurve [ #TPlist #FPlist ]
+
+  let xlist sort #FPlist
+  let ylist sort #TPlist
+
+;  show xlist
+;  show ylist
+
+  let lastx 0
+  let lasty 0
+
+  let AUC 0
+
+  foreach n-values (length xlist ) [ i -> i ] [ i ->
+    let thisx item i xlist
+    let thisy item i ylist
+;    show "---"
+;    show i
+;    show thisx
+;    show thisy
+;    show (thisx - lastx)
+;    show (thisy - lasty)
+
+    set AUC AUC + (thisy + lasty) * (thisx - lastx) / 2
+;    show AUC
+
+    set lastx thisx
+    set lasty thisy
+  ]
+
+  report AUC
+end
 @#$#@#$#@
 GRAPHICS-WINDOW
 210
@@ -76,12 +286,87 @@ GRAPHICS-WINDOW
 ticks
 30.0
 
+BUTTON
+5
+10
+78
+43
+NIL
+setup
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+87
+10
+150
+43
+NIL
+go
+T
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+SLIDER
+5
+50
+190
+83
+num-detectors
+num-detectors
+2
+100
+50.0
+1
+1
+NIL
+HORIZONTAL
+
+SWITCH
+660
+290
+845
+323
+new-messages?
+new-messages?
+1
+1
+-1000
+
+SLIDER
+5
+85
+190
+118
+pcnt-treated
+pcnt-treated
+0
+1
+0.5
+0.01
+1
+NIL
+HORIZONTAL
+
 PLOT
-6
-184
-200
-364
-ROC Curve
+660
+10
+854
+190
+Control ROC
 FP Rate
 TP Rate
 0.0
@@ -95,59 +380,153 @@ PENS
 "neutral" 1.0 0 -7500403 true "" ""
 "ROC" 1.0 0 -13345367 true "" ""
 
-BUTTON
-71
-59
-187
-92
-NIL
-plotByOrder
-NIL
+PLOT
+661
+245
+855
+425
+Treated ROC
+FP Rate
+TP Rate
+0.0
+1.0
+0.0
+1.0
+true
+false
+"" ""
+PENS
+"neutral" 1.0 0 -7500403 true "" ""
+"ROC" 1.0 0 -13345367 true "" ""
+
+MONITOR
+660
+195
+850
+240
+AUC Control
+AUC-control
+3
 1
-T
-OBSERVER
-NIL
-NIL
-NIL
-NIL
+11
+
+MONITOR
+660
+430
+855
+475
+AUC Treated
+AUC-treatment
+3
 1
+11
+
+SLIDER
+5
+130
+185
+163
+num-signals
+num-signals
+0
+100
+100.0
+1
+1
+NIL
+HORIZONTAL
+
+SLIDER
+5
+170
+185
+203
+pcnt-true-cases
+pcnt-true-cases
+0
+1
+0.25
+.01
+1
+NIL
+HORIZONTAL
+
+SLIDER
+5
+270
+185
+303
+treatment-effect
+treatment-effect
+-1
+1
+0.25
+.01
+1
+NIL
+HORIZONTAL
+
+SLIDER
+5
+230
+185
+263
+control-effect
+control-effect
+-1
+1
+0.0
+.01
+1
+NIL
+HORIZONTAL
 
 @#$#@#$#@
+## NOTE:
+
+This demonstrates how to draw Receiver Operating Characteristic (ROC) Curves and calculate Area Under the [ROC] Curve (AUC) using Netlogo.  This particular example also shows how to generate competing curves for a *control* and *treatment* group.
+
 ## WHAT IS IT?
 
-(a general understanding of what the model is trying to show or explain)
+TODO
+
 
 ## HOW IT WORKS
 
-(what rules the agents use to create the overall behavior of the model)
+TODO
+
 
 ## HOW TO USE IT
 
-(how to use the model, including a description of each of the items in the Interface tab)
+TODO
 
 ## THINGS TO NOTICE
 
-(suggested things for the user to notice while running the model)
-
-## THINGS TO TRY
-
-(suggested things for the user to try to do (move sliders, switches, etc.) with the model)
+TODO
 
 ## EXTENDING THE MODEL
 
-(suggested things to add or change in the Code tab to make the model more complicated, detailed, accurate, etc.)
+TODO
 
 ## NETLOGO FEATURES
 
-(interesting or unusual features of NetLogo that the model uses, particularly in the Code tab; or where workarounds were needed for missing features)
+TODO
 
-## RELATED MODELS
 
-(models in the NetLogo Models Library and elsewhere which are of related interest)
 
-## CREDITS AND REFERENCES
+## HOW TO CITE
 
-(a reference to the model's URL on the web if it has one, as well as any other necessary credits, citations, and links)
+TODO:  Update
+For the model itself:
+
+
+Please cite the NetLogo software as:
+
+* Wilensky, U. (1999). NetLogo. http://ccl.northwestern.edu/netlogo/. Center for Connected Learning and Computer-Based Modeling, Northwestern University, Evanston, IL.
+
+## COPYRIGHT AND LICENSE
+
+TODO: Update below:
 @#$#@#$#@
 default
 true
@@ -471,5 +850,5 @@ true
 Line -7500403 true 150 150 90 180
 Line -7500403 true 150 150 210 180
 @#$#@#$#@
-0
+1
 @#$#@#$#@
