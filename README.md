@@ -1,5 +1,7 @@
 # NetLogo-Tidbits
-a collection of small NetLogo files demonstrating small problems I've solved while building Agent Based Models
+This is a collection of small NetLogo files demonstrating small problems I've solved while building Agent Based Models.
+
+NetLogo is an Agent-Based Modeling (ABM) programming environment for developing and running ABMs that's freely available from Northwestern University: http://ccl.northwestern.edu/netlogo/
 
 # List of Tidbits
 
